@@ -5,3 +5,5 @@ xcuserdata/
 .vscode
 .build
 *.xcworkspace
+
+Benchmarks/Standalone/input.*.bin
