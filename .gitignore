@@ -7,3 +7,4 @@ xcuserdata/
 *.xcworkspace
 
 Benchmarks/Standalone/input.*.bin
+Vendor/
