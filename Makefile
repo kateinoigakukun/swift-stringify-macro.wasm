@@ -21,5 +21,6 @@ Vendor/swift-testing:
 	git -C ./Vendor/swift-testing am ./../../Patches/swift-testing/0001-Add-Wasm-Macro-boilerplate-to-Package.swift.patch
 
 Sources/TestingMacros.wasm: Vendor/swift-testing
-	SWIFT_BUILD_MACRO_WASM=1 TOOLCHAINS=$(TOOLCHAIN_BUNDLE_ID) swift build --package-path Vendor/swift-testing --swift-sdk $(SWIFT_SDK_ID) --product TestingMacros -c release -Xswiftc -Osize
+	SWIFT_BUILD_MACRO_WASM=1 TOOLCHAINS=$(TOOLCHAIN_BUNDLE_ID) swift build --package-path Vendor/swift-testing --swift-sdk $(SWIFT_SDK_ID) --product TestingMacros -c release \
+	  -Xlinker --stack-first -Xlinker -z -Xlinker stack-size=8388608 -Xlinker --global-base=8388608
 	cp -a Vendor/swift-testing/.build/wasm32-unknown-wasi/release/TestingMacros.wasm Sources/TestingMacros.wasm

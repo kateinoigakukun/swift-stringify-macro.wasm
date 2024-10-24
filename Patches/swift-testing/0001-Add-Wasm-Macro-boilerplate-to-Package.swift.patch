@@ -1,4 +1,4 @@
-From 7426375e2fcb09d249a1969e106c129682b50693 Mon Sep 17 00:00:00 2001
+From 571cea0c0b2a450eb30f04bb7191d29a3646e75b Mon Sep 17 00:00:00 2001
 From: Yuta Saito <kateinoigakukun@gmail.com>
 Date: Fri, 25 Oct 2024 03:54:44 +0900
 Subject: [PATCH] Add Wasm Macro boilerplate to Package.swift
@@ -8,7 +8,7 @@ Subject: [PATCH] Add Wasm Macro boilerplate to Package.swift
  1 file changed, 72 insertions(+), 1 deletion(-)
 
 diff --git a/Package.swift b/Package.swift
-index 32ea88b..18aa20f 100644
+index 32ea88b..2613d48 100644
 --- a/Package.swift
 +++ b/Package.swift
 @@ -33,7 +33,7 @@ let package = Package(
@@ -29,7 +29,7 @@ index 32ea88b..18aa20f 100644
 +    // Ad-hoc build hack for building macro targets as WebAssembly executables
 +    for (index, target) in package.targets.enumerated() {
 +        guard case .macro = target.type else { continue }
-+        package.targets[index] = .executableTarget(name: target.name, dependencies: target.dependencies)
++        package.targets[index] = .executableTarget(name: target.name, dependencies: target.dependencies, exclude: target.exclude, swiftSettings: target.swiftSettings)
 +    }
 +} else if let swiftPluginServerPath = Context.environment["SWIFT_PLUGIN_SERVER_PATH"] {
 +    // Ad-hoc build hack for loading WebAssembly executables placed in `Sources/<target>.wasm`
