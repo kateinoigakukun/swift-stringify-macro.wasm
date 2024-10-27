@@ -24,3 +24,13 @@ Sources/TestingMacros.wasm: Vendor/swift-testing
 	SWIFT_BUILD_MACRO_WASM=1 TOOLCHAINS=$(TOOLCHAIN_BUNDLE_ID) swift build --package-path Vendor/swift-testing --swift-sdk $(SWIFT_SDK_ID) --product TestingMacros -c release \
 	  -Xlinker --stack-first -Xlinker -z -Xlinker stack-size=8388608 -Xlinker --global-base=8388608
 	cp -a Vendor/swift-testing/.build/wasm32-unknown-wasi/release/TestingMacros.wasm Sources/TestingMacros.wasm
+
+Vendor/swift-mmio:
+	mkdir -p Vendor
+	git clone "https://github.com/apple/swift-mmio" "Vendor/swift-mmio"
+	git -C ./Vendor/swift-mmio checkout "c24e0349e1bbdff74aa88908cdfd39bcd9d4fe1b"
+	git -C ./Vendor/swift-mmio am ./../../Patches/swift-mmio/0001-Add-WASI-macros-setup.patch
+
+Sources/MMIOMacros.wasm: Vendor/swift-mmio
+	SWIFT_BUILD_MACRO_WASM=1 TOOLCHAINS=$(TOOLCHAIN_BUNDLE_ID) swift build --package-path Vendor/swift-mmio --swift-sdk $(SWIFT_SDK_ID) --product MMIOMacros -c release
+	cp -a Vendor/swift-mmio/.build/wasm32-unknown-wasi/release/MMIOMacros.wasm Sources/MMIOMacros.wasm

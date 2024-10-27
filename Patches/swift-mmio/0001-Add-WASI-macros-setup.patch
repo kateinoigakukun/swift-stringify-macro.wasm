@@ -1,0 +1,484 @@
+From ad939afab65071fb847ad66a47d54dca3b1ed6f2 Mon Sep 17 00:00:00 2001
+From: Max Desiatov <m_desiatov@apple.com>
+Date: Mon, 21 Oct 2024 14:36:37 +0100
+Subject: [PATCH 1/2] WASI macros
+
+---
+ Makefile                                 |  54 +----
+ Package.resolved                         |   6 +-
+ Package.swift                            | 262 ++++++++++++++++-------
+ Sources/MMIOMacrosExample/main.swift     |   2 +
+ Sources/MMIOUtilities/ShellCommand.swift |   4 +
+ 5 files changed, 193 insertions(+), 135 deletions(-)
+ create mode 100644 Sources/MMIOMacrosExample/main.swift
+
+diff --git a/Makefile b/Makefile
+index 7dc9f3a..0b20fd6 100644
+--- a/Makefile
++++ b/Makefile
+@@ -1,51 +1,5 @@
+-#===-------------------------------------------------------------*- make -*-===#
+-#
+-# This source file is part of the Swift MMIO open source project
+-#
+-# Copyright (c) 2023 Apple Inc. and the Swift project authors
+-# Licensed under Apache License v2.0 with Runtime Library Exception
+-#
+-# See https://swift.org/LICENSE.txt for license information
+-#
+-#===------------------------------------------------------------------------===#
++Sources/MMIOMacros.wasm:
++	SWIFT_BUILD_MACRO_WASM=1 TOOLCHAINS=org.swift.61202409251a swift build --swift-sdk DEVELOPMENT-SNAPSHOT-2024-09-26-a-wasm32-unknown-wasi --product MMIOMacros -c release -Xswiftc -Osize
++	cp -a .build/wasm32-unknown-wasi/release/MMIOMacros.wasm Sources/MMIOMacros.wasm
++	command -v wasm-opt && wasm-opt -Os Sources/MMIOMacros.wasm -o Sources/MMIOMacros.wasm || :
+ 
+-CONFIGURATION = debug
+-SWIFT_FORMAT_CONFIGURATION := SupportingFiles/Tools/swift-format/.swift-format
+-SKIP_LINT =
+-
+-.PHONY: all lint format build test clean
+-all: test
+-
+-lint:
+-	@echo "linting..."
+-	@swift-format lint \
+-		--configuration $(SWIFT_FORMAT_CONFIGURATION) \
+-		--recursive \
+-		--strict \
+-		Package.swift Plugins Sources Tests
+-
+-format:
+-	@echo "formatting..."
+-	@swift-format format \
+-		--configuration $(SWIFT_FORMAT_CONFIGURATION) \
+-		--recursive \
+-		--in-place \
+-		Package.swift Plugins Sources Tests
+-
+-build:
+-	@echo "building..."
+-	@swift build \
+-		--configuration $(CONFIGURATION) \
+-		--explicit-target-dependency-import-check error
+-
+-test: build
+-	@echo "testing..."
+-	@swift test \
+-		--configuration $(CONFIGURATION) \
+-		--parallel \
+-		--explicit-target-dependency-import-check error
+-
+-clean:
+-	@echo "cleaning..."
+-	@swift package clean
+-	@rm -rf .build
+diff --git a/Package.resolved b/Package.resolved
+index 1555eff..a515507 100644
+--- a/Package.resolved
++++ b/Package.resolved
+@@ -1,5 +1,5 @@
+ {
+-  "originHash" : "cd28951ae8395e1e78261509ca351f5d837bc9012684c49f826b0c8fe6372ad6",
++  "originHash" : "c03510711b0605f70ca9401dd58500bfbc5543c92818a7127ff095e74798af03",
+   "pins" : [
+     {
+       "identity" : "swift-argument-parser",
+@@ -15,8 +15,8 @@
+       "kind" : "remoteSourceControl",
+       "location" : "https://github.com/swiftlang/swift-syntax.git",
+       "state" : {
+-        "revision" : "0687f71944021d616d34d922343dcef086855920",
+-        "version" : "600.0.1"
++        "branch" : "main",
++        "revision" : "d145cb2a6efb5c8d45cd5df5f494a89c93c90758"
+       }
+     }
+   ],
+diff --git a/Package.swift b/Package.swift
+index eaac2a3..d160a06 100644
+--- a/Package.swift
++++ b/Package.swift
+@@ -1,4 +1,4 @@
+-// swift-tools-version: 6.0
++// swift-tools-version: 5.10
+ 
+ import CompilerPluginSupport
+ import PackageDescription
+@@ -18,32 +18,37 @@ let package = Package(
+     .library(name: "MMIO", targets: ["MMIO"]),
+ 
+     // SVD
+-    .library(name: "SVD", targets: ["SVD"]),
+-    .library(name: "SVD2LLDB", type: .dynamic, targets: ["SVD2LLDB"]),
+-    .executable(
+-      // FIXME: rdar://112530586
+-      // XPM skips build plugin if product and target names are not identical.
+-      // Rename this product to "svd2swift" when Xcode bug is resolved.
+-      name: "SVD2Swift",
+-      targets: ["SVD2Swift"]),
+-    .plugin(name: "SVD2SwiftPlugin", targets: ["SVD2SwiftPlugin"]),
++    // .library(name: "SVD", targets: ["SVD"]),
++    // .library(name: "SVD2LLDB", type: .dynamic, targets: ["SVD2LLDB"]),
++    // .executable(
++    //     // FIXME: rdar://112530586
++    //     // XPM skips build plugin if product and target names are not identical.
++    //     // Rename this product to "svd2swift" when Xcode bug is resolved.
++    //     name: "SVD2Swift",
++    //     targets: ["SVD2Swift"]
++    // ),
++    // .plugin(name: "SVD2SwiftPlugin", targets: ["SVD2SwiftPlugin"]),
+   ],
+   dependencies: [
+     .package(
+       url: "https://github.com/apple/swift-argument-parser.git",
+-      from: "1.4.0"),
++      from: "1.4.0"
++    ),
+     .package(
+       url: "https://github.com/swiftlang/swift-syntax.git",
+-      from: "600.0.1"),
++      branch: "main"
++    ),
+   ],
+   targets: [
+     // MMIO
+     .target(
+       name: "MMIO",
+-      dependencies: ["MMIOMacros", "MMIOVolatile"]),
++      dependencies: ["MMIOMacros", "MMIOVolatile"]
++    ),
+     .testTarget(
+       name: "MMIOTests",
+-      dependencies: ["MMIO", "MMIOUtilities"]),
++      dependencies: ["MMIO", "MMIOUtilities"]
++    ),
+ 
+     // FIXME: feature flag
+     // Ideally this would be represented as MMIO + Feature: Interposable
+@@ -52,16 +57,24 @@ let package = Package(
+     .target(
+       name: "MMIOInterposable",
+       dependencies: ["MMIOMacros", "MMIOVolatile"],
+-      swiftSettings: [.define("FEATURE_INTERPOSABLE")]),
++      swiftSettings: [.define("FEATURE_INTERPOSABLE")]
++    ),
+     .testTarget(
+       name: "MMIOInterposableTests",
+       dependencies: ["MMIOInterposable", "MMIOUtilities"],
+-      swiftSettings: [.define("FEATURE_INTERPOSABLE")]),
++      swiftSettings: [.define("FEATURE_INTERPOSABLE")]
++    ),
+ 
+     .testTarget(
+       name: "MMIOFileCheckTests",
+       dependencies: ["MMIOUtilities"],
+-      exclude: ["Tests"]),
++      exclude: ["Tests"]
++    ),
++
++    .executableTarget(
++      name: "MMIOMacrosExample",
++      dependencies: ["MMIO"]
++    ),
+ 
+     .macro(
+       name: "MMIOMacros",
+@@ -74,7 +87,8 @@ let package = Package(
+         .product(name: "SwiftSyntaxBuilder", package: "swift-syntax"),
+         .product(name: "SwiftSyntaxMacroExpansion", package: "swift-syntax"),
+         .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
+-      ]),
++      ]
++    ),
+     .testTarget(
+       name: "MMIOMacrosTests",
+       dependencies: [
+@@ -86,84 +100,168 @@ let package = Package(
+         .product(name: "SwiftSyntax", package: "swift-syntax"),
+         .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
+         .product(name: "SwiftSyntaxMacrosTestSupport", package: "swift-syntax"),
+-      ]),
++      ]
++    ),
+ 
+     .target(name: "MMIOUtilities"),
+     .testTarget(
+       name: "MMIOUtilitiesTests",
+-      dependencies: ["MMIOUtilities"]),
++      dependencies: ["MMIOUtilities"]
++    ),
+ 
+     .systemLibrary(name: "MMIOVolatile"),
+ 
+     // SVD
+-    .target(
+-      name: "SVD",
+-      dependencies: ["MMIOUtilities", "SVDMacros"]),
+-    .testTarget(
+-      name: "SVDTests",
+-      dependencies: ["MMIOUtilities", "SVD"]),
+-
+-    .target(name: "CLLDB"),
+-    .target(
+-      name: "SVD2LLDB",
+-      dependencies: [
+-        .product(name: "ArgumentParser", package: "swift-argument-parser"),
+-        "CLLDB",
+-        "SVD",
+-      ],
+-      swiftSettings: [.interoperabilityMode(.Cxx)]),
+-    .testTarget(
+-      name: "SVD2LLDBTests",
+-      dependencies: ["SVD2LLDB"],
+-      swiftSettings: [.interoperabilityMode(.Cxx)]),
+-
+-    .executableTarget(
+-      name: "SVD2Swift",
+-      dependencies: [
+-        .product(name: "ArgumentParser", package: "swift-argument-parser"),
+-        "SVD",
+-      ]),
+-    .testTarget(
+-      name: "SVD2SwiftTests",
+-      dependencies: ["SVD", "SVD2Swift"]),
+-
+-    .plugin(
+-      name: "SVD2SwiftPlugin",
+-      capability: .buildTool,
+-      dependencies: ["SVD2Swift"]),
+-    .testTarget(
+-      name: "SVD2SwiftPluginTests",
+-      dependencies: ["MMIO"],
+-      plugins: ["SVD2SwiftPlugin"]),
++    // .target(
++    //     name: "SVD",
++    //     dependencies: ["MMIOUtilities", "SVDMacros"]
++    // ),
++    // .testTarget(
++    //     name: "SVDTests",
++    //     dependencies: ["MMIOUtilities", "SVD"]
++    // ),
+ 
+-    .macro(
+-      name: "SVDMacros",
+-      dependencies: [
+-        .product(name: "SwiftCompilerPlugin", package: "swift-syntax"),
+-        .product(name: "SwiftSyntax", package: "swift-syntax"),
+-        .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
+-      ]),
+-    .testTarget(
+-      name: "SVDMacrosTests",
+-      dependencies: [
+-        "SVDMacros",
+-        .product(name: "SwiftSyntax", package: "swift-syntax"),
+-        .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
+-        .product(name: "SwiftSyntaxMacrosTestSupport", package: "swift-syntax"),
+-      ]),
++    // .target(name: "CLLDB"),
++    // .target(
++    //     name: "SVD2LLDB",
++    //     dependencies: [
++    //         .product(name: "ArgumentParser", package: "swift-argument-parser"),
++    //         "CLLDB",
++    //         "SVD",
++    //     ],
++    //     swiftSettings: [.interoperabilityMode(.Cxx)]
++    // ),
++    // .testTarget(
++    //     name: "SVD2LLDBTests",
++    //     dependencies: ["SVD2LLDB"],
++    //     swiftSettings: [.interoperabilityMode(.Cxx)]
++    // ),
++    //
++    // .executableTarget(
++    //     name: "SVD2Swift",
++    //     dependencies: [
++    //         .product(name: "ArgumentParser", package: "swift-argument-parser"),
++    //         "SVD",
++    //     ]
++    // ),
++    // .testTarget(
++    //     name: "SVD2SwiftTests",
++    //     dependencies: ["SVD", "SVD2Swift"]
++    // ),
++    //
++    // .plugin(
++    //     name: "SVD2SwiftPlugin",
++    //     capability: .buildTool,
++    //     dependencies: ["SVD2Swift"]
++    // ),
++    // .testTarget(
++    //     name: "SVD2SwiftPluginTests",
++    //     dependencies: ["MMIO"],
++    //     plugins: ["SVD2SwiftPlugin"]
++    // ),
++    //
++    // .macro(
++    //     name: "SVDMacros",
++    //     dependencies: [
++    //         .product(name: "SwiftCompilerPlugin", package: "swift-syntax"),
++    //         .product(name: "SwiftSyntax", package: "swift-syntax"),
++    //         .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
++    //     ]
++    // ),
++    // .testTarget(
++    //     name: "SVDMacrosTests",
++    //     dependencies: [
++    //         "SVDMacros",
++    //         .product(name: "SwiftSyntax", package: "swift-syntax"),
++    //         .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
++    //         .product(name: "SwiftSyntaxMacrosTestSupport", package: "swift-syntax"),
++    //     ]
++    // ),
+   ],
+-  cxxLanguageStandard: .cxx11)
+-
+-let svd2lldb = "FEATURE_SVD2LLDB"
+-if featureIsEnabled(named: svd2lldb, override: nil) {
+-  let target = package.targets.first { $0.name == "SVD2LLDB" }
+-  guard let target = target else { fatalError("Manifest inconsistency") }
+-  target.linkerSettings = [.linkedFramework("LLDB")]
+-}
++  cxxLanguageStandard: .cxx11
++)
+ 
++// let svd2lldb = "FEATURE_SVD2LLDB"
++// if featureIsEnabled(named: svd2lldb, override: nil) {
++//     let target = package.targets.first { $0.name == "SVD2LLDB" }
++//     guard let target = target else { fatalError("Manifest inconsistency") }
++//     target.linkerSettings = [.linkedFramework("LLDB")]
++// }
++//
+ // Package API Extensions
+ func featureIsEnabled(named featureName: String, override: Bool?) -> Bool {
+   let key = "SWIFT_MMIO_\(featureName)"
+   let environment = Context.environment[key] != nil
+   return override ?? environment
+ }
++
++if Context.environment["SWIFT_BUILD_MACRO_WASM"] != nil {
++  // Ad-hoc build hack for building macro targets as WebAssembly executables
++  for (index, target) in package.targets.enumerated() {
++    guard case .macro = target.type else { continue }
++    package.targets[index] = .executableTarget(name: target.name, dependencies: target.dependencies)
++  }
++} else if let swiftPluginServerPath = Context.environment["SWIFT_PLUGIN_SERVER_PATH"] {
++  // Ad-hoc build hack for loading WebAssembly executables placed in `Sources/<target>.wasm`
++  // as Swift compiler plugins
++
++  func dependencyName(_ dependency: Target.Dependency) -> String? {
++    switch dependency {
++    case let .targetItem(name: name, condition: _),
++         let .byNameItem(name: name, condition: _):
++      return name
++    default:
++      return nil
++    }
++  }
++
++  // Find targets that (transitively) depend on macro targets
++  var dependents = [String: [Target]]()
++  for target in package.targets {
++    for dependency in target.dependencies {
++      if let name = dependencyName(dependency) {
++        dependents[name, default: []].append(target)
++      }
++    }
++  }
++
++  func transitivelyDependentTargets(of targetName: String) -> [Target] {
++    var visited = Set<String>()
++    var result = [Target]()
++    var queue = [targetName]
++    while let current = queue.popLast() {
++      guard let currentDependents = dependents[current] else { continue }
++      for dependent in currentDependents {
++        if visited.insert(dependent.name).inserted {
++          result.append(dependent)
++          queue.append(dependent.name)
++        }
++      }
++    }
++    return result
++  }
++
++  let macroTargets = package.targets.reduce(into: [String: Target]()) { result, target in
++    if case .macro = target.type {
++      result[target.name] = target
++    }
++  }
++
++  for macroTarget in macroTargets.values {
++    let wasmPath = Context.packageDirectory + "/" + (macroTarget.path ?? "Sources/\(macroTarget.name)") + ".wasm"
++
++    for target in transitivelyDependentTargets(of: macroTarget.name) {
++      var swiftSettings = target.swiftSettings ?? []
++
++      swiftSettings.append(.unsafeFlags([
++        "-Xfrontend", "-load-plugin",
++        "-Xfrontend", "\(wasmPath)#\(swiftPluginServerPath)#\(macroTarget.name)",
++      ]))
++      target.swiftSettings = swiftSettings
++      // Remove the macro target from the dependencies
++      target.dependencies.removeAll { dependency in
++        dependencyName(dependency) == macroTarget.name
++      }
++    }
++  }
++}
+diff --git a/Sources/MMIOMacrosExample/main.swift b/Sources/MMIOMacrosExample/main.swift
+new file mode 100644
+index 0000000..729a1ae
+--- /dev/null
++++ b/Sources/MMIOMacrosExample/main.swift
+@@ -0,0 +1,2 @@
++import MMIO
++@RegisterBlock struct Example0 {}
+diff --git a/Sources/MMIOUtilities/ShellCommand.swift b/Sources/MMIOUtilities/ShellCommand.swift
+index 5739d1f..740c510 100644
+--- a/Sources/MMIOUtilities/ShellCommand.swift
++++ b/Sources/MMIOUtilities/ShellCommand.swift
+@@ -9,6 +9,8 @@
+ //
+ //===----------------------------------------------------------------------===//
+ 
++#if !os(WASI)
++
+ import Dispatch
+ import Foundation
+ 
+@@ -104,3 +106,5 @@ public func sh(
+ 
+   return outputData.withLock { $0 }.asUTF8String()
+ }
++
++#endif // #if !os(WASI)
+
+From 73a5a4d8621be4ac7e6f7bad2e3f850336246e35 Mon Sep 17 00:00:00 2001
+From: Max Desiatov <m_desiatov@apple.com>
+Date: Fri, 25 Oct 2024 15:49:01 +0100
+Subject: [PATCH 2/2] Increase WASI macro stack size
+
+---
+ Package.swift | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/Package.swift b/Package.swift
+index d160a06..4c72cbe 100644
+--- a/Package.swift
++++ b/Package.swift
+@@ -199,7 +199,13 @@ if Context.environment["SWIFT_BUILD_MACRO_WASM"] != nil {
+   // Ad-hoc build hack for building macro targets as WebAssembly executables
+   for (index, target) in package.targets.enumerated() {
+     guard case .macro = target.type else { continue }
+-    package.targets[index] = .executableTarget(name: target.name, dependencies: target.dependencies)
++    package.targets[index] = .executableTarget(
++      name: target.name,
++      dependencies: target.dependencies,
++      linkerSettings: [.unsafeFlags([
++        "-Xlinker", "-z", "-Xlinker", "stack-size=\(4 * 1024 * 1024)",
++      ])]
++    )
+   }
+ } else if let swiftPluginServerPath = Context.environment["SWIFT_PLUGIN_SERVER_PATH"] {
+   // Ad-hoc build hack for loading WebAssembly executables placed in `Sources/<target>.wasm`
